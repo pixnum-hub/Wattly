@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wattly - Appliance Electricity Cost Calculator</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+:root{--glass: rgba(255,255,255,.22);}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:linear-gradient(135deg,#74ebd5,#acb6e5);min-height:100vh;display:flex;justify-content:center;padding:12px;transition:0.3s;}
+.app{width:100%;max-width:540px;background:var(--glass);backdrop-filter:blur(16px);border-radius:22px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.35);color:#fff;position:relative;display:flex;flex-direction:column;transition:0.3s;}
+h1{text-align:center;font-size:1.45rem;margin:6px 0 12px}
+.group label{font-size:.82rem;font-weight:600}
+.group input,.group select{width:100%;margin-top:4px;padding:9px;border-radius:12px;border:none;background:rgba(255,255,255,.3);color:#fff;transition:0.3s;}
+.buttons{display:flex;gap:8px;margin-top:8px}
+button{flex:1;padding:10px;border:none;border-radius:12px;background:rgba(255,255,255,.35);color:#fff;cursor:pointer;transition:0.3s;}
+button:hover{background:rgba(255,255,255,.55)}
+.list{margin-top:10px;background:rgba(255,255,255,.15);padding:10px;border-radius:14px;font-size:.82rem;max-height:300px;overflow-y:auto;transition:0.3s;}
+.item{display:flex;justify-content:space-between;margin-bottom:6px}
+.summary{display:flex;gap:8px;margin-top:10px;justify-content:space-between;}
+.sum-box{flex:1;padding:14px;border-radius:14px;background:rgba(255,255,255,.25);text-align:center;font-size:.85rem;box-shadow:0 8px 20px rgba(0,0,0,.15);transition:0.3s;}
+.sum-box strong{display:block;margin-top:4px;font-size:1rem;}
+footer{margin-top:12px;text-align:center;font-size:.75rem;opacity:.85;transition:0.3s;}
+/* Dark Mode Styles */
+body.dark{background:#111;}
+.app.dark{background:rgba(30,30,30,.6);color:#eee;}
+.group input.dark,.group select.dark{background:rgba(255,255,255,.1);color:#eee;}
+button.dark{background:rgba(255,255,255,.15);color:#eee;}
+button.dark:hover{background:rgba(255,255,255,.3);}
+.list.dark{background:rgba(255,255,255,.05);}
+.sum-box.dark{background:rgba(255,255,255,.08);color:#eee;box-shadow:0 8px 20px rgba(0,0,0,.25);}
+
+/* Dark Mode Toggle */
+.toggle-container{position:absolute;top:14px;right:14px;width:50px;height:50px;background:rgba(255,255,255,.35);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:0.3s;}
+.toggle-container.dark{background:rgba(255,255,255,.15);}
+.toggle-icon{font-size:1.25rem;pointer-events:none;}
+</style>
+</head>
+
+<body>
+<div class="app" id="app">
+
+<div class="toggle-container" id="darkToggle"><span class="toggle-icon" id="toggleIcon">🌞</span></div>
+
+<h1>Wattly</h1>
+
+<div class="group">
+<label>Quick Presets (62 Appliances)</label>
+<select id="preset"><option value="">Select Appliance</option></select>
+</div>
+
+<div class="group"><label>Appliance Name</label><input id="applianceName"></div>
+<div class="group"><label>Power (Watts)</label><input id="power" type="number"></div>
+
+<div class="group">
+<label>Usage Unit</label>
+<select id="timeUnit">
+<option value="hour" selected>Hours</option>
+<option value="minute">Minutes</option>
+</select>
+</div>
+
+<div class="group">
+<label>Minute / Hour / Day</label>
+<input id="hours" type="number" step="0.1">
+</div>
+
+<div class="group"><label>Cost per kWh (₹)</label><input id="rate" type="number" value="6"></div>
+
+<div class="group">
+<label>Currency</label>
+<select id="currencySelect"><option value="INR">₹ INR</option><option value="USD">$ USD</option></select>
+</div>
+
+<div class="buttons">
+<button onclick="addAppliance()">Add</button>
+<button onclick="resetAll()">Reset</button>
+<button onclick="exportPDF()">PDF</button>
+</div>
+
+<div class="summary" id="summary">
+<div class="sum-box"><span>Per Day</span><strong id="dayTotal">₹0.00</strong></div>
+<div class="sum-box"><span>Per Month</span><strong id="monthTotal">₹0.00</strong></div>
+<div class="sum-box"><span>Per Year</span><strong id="yearTotal">₹0.00</strong></div>
+</div>
+
+<div class="list" id="list"></div>
+
+<footer>© Manik Roy 2025. All Rights Reserved.</footer>
+</div>
+
+<script>
+// References
+const app = document.getElementById('app');
+const darkToggle = document.getElementById('darkToggle');
+const toggleIcon = document.getElementById('toggleIcon');
+const applianceNameInput = document.getElementById('applianceName');
+const powerInput = document.getElementById('power');
+const hoursInput = document.getElementById('hours');
+const timeUnit = document.getElementById('timeUnit');
+const rateInput = document.getElementById('rate');
+const presetSelect = document.getElementById('preset');
+const list = document.getElementById('list');
+const currencySelect = document.getElementById('currencySelect');
+
+let items=[], currency='INR';
+
+// Dark Mode Toggle
+darkToggle.onclick = () => {
+    document.body.classList.toggle('dark');
+    app.classList.toggle('dark');
+    const inputs = document.querySelectorAll('.group input, .group select');
+    inputs.forEach(i=>i.classList.toggle('dark'));
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(b=>b.classList.toggle('dark'));
+    document.getElementById('list').classList.toggle('dark');
+    document.querySelectorAll('.sum-box').forEach(sb=>sb.classList.toggle('dark'));
+    document.querySelector('footer').classList.toggle('dark');
+    toggleIcon.textContent = toggleIcon.textContent==='🌞'?'🌙':'🌞';
+}
+
+// 62 Appliances Alphabetically including all fans
+const presets = {
+  a:{n:'Air Conditioner',p:1500,h:1}, b:{n:'Air Cooler',p:200,h:6}, c:{n:'Ceiling Fan',p:75,h:8},
+  d:{n:'Table Fan',p:50,h:6}, e:{n:'Pedestal Fan',p:60,h:6}, f:{n:'Wall Fan',p:40,h:6}, g:{n:'Exhaust Fan',p:50,h:6},
+  h:{n:'Air Purifier',p:50,h:8}, i:{n:'Baby Monitor',p:10,h:24}, j:{n:'Blender',p:300,h:0.25}, k:{n:'Bread Maker',p:600,h:1},
+  l:{n:'Ceiling Light',p:40,h:5}, m:{n:'Clothes Dryer',p:2000,h:1}, n:{n:'Coffee Grinder',p:200,h:0.3}, o:{n:'Coffee Maker',p:900,h:0.3},
+  p:{n:'Deep Freezer',p:300,h:24}, q:{n:'Dish Dryer',p:250,h:0.5}, r:{n:'Dishwasher',p:1200,h:1}, s:{n:'Electric Grill',p:1200,h:0.5},
+  t:{n:'Electric Kettle',p:2000,h:0.2}, u:{n:'Electric Oven',p:2000,h:1}, v:{n:'Fan Heater',p:1500,h:1}, w:{n:'Fan Light',p:75,h:5},
+  x:{n:'Food Processor',p:400,h:0.5}, y:{n:'Gaming PC',p:500,h:3}, z:{n:'Hair Dryer',p:1000,h:0.15}, aa:{n:'Hair Straightener',p:80,h:0.2},
+  ab:{n:'Hand Blender',p:250,h:0.25}, ac:{n:'Hand Mixer',p:250,h:0.25}, ad:{n:'Humidifier',p:300,h:4}, ae:{n:'Ice Cream Maker',p:150,h:1},
+  af:{n:'Induction Cooker',p:1800,h:0.5}, ag:{n:'Iron',p:1000,h:0.5}, ah:{n:'Juicer',p:400,h:0.25}, ai:{n:'Juice Extractor',p:350,h:0.3},
+  aj:{n:'Kettle',p:1500,h:0.2}, ak:{n:'LED Bulb',p:12,h:6}, al:{n:'LED TV',p:120,h:5}, am:{n:'Microwave',p:1200,h:0.5},
+  an:{n:'Mobile Charger',p:5,h:3}, ao:{n:'Mixer Grinder',p:500,h:0.5}, ap:{n:'Night Lamp',p:10,h:8}, aq:{n:'Notebook/Laptop',p:60,h:6},
+  ar:{n:'Oven',p:1800,h:1}, as:{n:'Oscillating Fan',p:70,h:8}, at:{n:'Portable Heater',p:1200,h:2}, au:{n:'Printer',p:50,h:0.5},
+  av:{n:'Projector',p:200,h:2}, aw:{n:'Rice Cooker',p:400,h:0.5}, ax:{n:'Rice Polisher',p:200,h:0.5}, ay:{n:'Refrigerator',p:200,h:24},
+  az:{n:'Sandwich Maker',p:700,h:0.3}, ba:{n:'Sewing Machine',p:70,h:1}, bb:{n:'Slow Cooker',p:250,h:3}, bc:{n:'Speaker',p:50,h:2},
+  bd:{n:'Television',p:150,h:5}, be:{n:'Toaster',p:800,h:0.2}, bf:{n:'USB Light',p:5,h:6}, bg:{n:'Vacuum Cleaner',p:1200,h:0.5},
+  bh:{n:'Vacuum Robot',p:40,h:1}, bi:{n:'Video Game Console',p:200,h:3}, bj:{n:'Water Dispenser',p:200,h:24}, bk:{n:'Water Pump',p:750,h:2},
+  bl:{n:'WiFi Router',p:10,h:24}, bm:{n:'Xbox',p:180,h:2}, bn:{n:'Yard Light',p:60,h:5}, bo:{n:'Yoga Treadmill',p:1500,h:1},
+  bp:{n:'Yogurt Maker',p:50,h:0.5}, bq:{n:'Zojirushi Rice Cooker',p:500,h:1}, br:{n:'Water Purifier',p:50,h:24}, bs:{n:'Dehumidifier',p:300,h:4}
+};
+
+// Populate dropdown alphabetically
+const presetArray = Object.values(presets).sort((a,b)=>a.n.localeCompare(b.n));
+presetSelect.innerHTML='<option value="">Select Appliance</option>';
+presetArray.forEach(p=>{
+    const option=document.createElement('option'); 
+    option.value=p.n; 
+    option.textContent=p.n; 
+    presetSelect.appendChild(option);
+});
+
+presetSelect.onchange = () => {
+    if(!presetSelect.value) return;
+    const selected = presetArray.find(p => p.n === presetSelect.value);
+    if(!selected) return;
+    applianceNameInput.value = selected.n;
+    powerInput.value = selected.p;
+    hoursInput.value = selected.h;
+};
+
+function validateInput(input, name) {
+    const value = parseFloat(input.value);
+    if (isNaN(value) || value <= 0) { alert(`Enter valid value for ${name}`); input.focus(); return null; }
+    return value;
+}
+
+function formatCurrency(value){return currency==='INR'?'₹'+value.toFixed(2):'$'+(value/83).toFixed(2);}
+function calculateCost(p,h){const kWh=(p/1000)*h;return kWh*rateInput.value;}
+
+function addAppliance() {
+    const n = applianceNameInput.value.trim();
+    if(n===''){ alert('Enter valid appliance name'); applianceNameInput.focus(); return; }
+
+    let p = validateInput(powerInput, 'Power'); if(p===null) return;
+    let h = validateInput(hoursInput, 'Minutes/Hour/Day'); if(h===null) return;
+    let r = validateInput(rateInput, 'Cost per kWh'); if(r===null) return;
+
+    if(timeUnit.value==='minute') h = h/60;
+
+    items.push({ n, p, h });
+    saveItems();
+    render();
+
+    applianceNameInput.value='';
+    powerInput.value='';
+    hoursInput.value='';
+}
+
+function render() {
+    items.sort((a,b)=>a.n.localeCompare(b.n));
+    list.innerHTML = '';
+    let dailyTotal = 0;
+
+    items.forEach(i => {
+        const cost = calculateCost(i.p,i.h);
+        dailyTotal += cost;
+        list.innerHTML += `<div class="item"><span>${i.n}</span><span>${formatCurrency(cost)}/day (${timeUnit.value})</span></div>`;
+    });
+
+    document.getElementById('dayTotal').textContent = formatCurrency(dailyTotal);
+    document.getElementById('monthTotal').textContent = formatCurrency(dailyTotal*30);
+    document.getElementById('yearTotal').textContent = formatCurrency(dailyTotal*365);
+}
+
+function resetAll(){items=[];saveItems();initializeApp();}
+function saveItems(){localStorage.setItem('appliances',JSON.stringify(items));}
+
+function initializeApp() {
+    applianceNameInput.value = '';
+    powerInput.value = '';
+    hoursInput.value = '';
+    timeUnit.value = 'hour';
+    rateInput.value = 6;
+    presetSelect.value = '';
+    currencySelect.value = 'INR';
+    currency = 'INR';
+    items = [];
+    render();
+}
+
+function exportPDF(){if(!items.length){alert('No data');return;}const {jsPDF}=window.jspdf;const doc=new jsPDF();doc.text('Electricity Cost Report',14,14);const rows=items.map(i=>{const c=calculateCost(i.p,i.h);return [i.n,i.p+' W',i.h+' h',formatCurrency(c)+'/day'];});doc.autoTable({head:[['Appliance','Power','Hours','Cost']],body:rows,startY:20});doc.save('Electricity_Report.pdf');}
+
+currencySelect.onchange=()=>{currency=currencySelect.value;render();}
+</script>
+</body>
+</html>
